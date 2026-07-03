@@ -97,13 +97,31 @@ def parse_source(source):
 
 def get_aruco_detector():
 	aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT_ID)
+	parameters = cv2.aruco.DetectorParameters()
 
-	if hasattr(cv2.aruco, "ArucoDetector"):
-		parameters = cv2.aruco.DetectorParameters()
-		return "new", cv2.aruco.ArucoDetector(aruco_dict, parameters)
+	# Refinamiento subpíxel: crítico a distancia, donde el marcador
+	# ocupa pocos píxeles y cualquier error de esquina se amplifica
+	parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+	parameters.cornerRefinementWinSize = 5
+	parameters.cornerRefinementMaxIterations = 50
+	parameters.cornerRefinementMinAccuracy = 0.01
 
-	parameters = cv2.aruco.DetectorParameters_create()
-	return "old", (aruco_dict, parameters)
+	# Tolerancia a marcadores pequeños en el frame (2-3 m)
+	parameters.minMarkerPerimeterRate = 0.02
+	parameters.maxMarkerPerimeterRate = 4.0
+
+	# Tolerancia a blur/rotación en la aproximación poligonal
+	parameters.polygonalApproxAccuracyRate = 0.05
+
+	# Threshold adaptativo más flexible ante variación de exposición
+	parameters.adaptiveThreshWinSizeMin = 3
+	parameters.adaptiveThreshWinSizeMax = 30
+	parameters.adaptiveThreshWinSizeStep = 5
+
+	# Más tolerante a bits erróneos en el borde (útil bajo blur de rotación)
+	parameters.maxErroneousBitsInBorderRate = 0.5
+
+	return "new", cv2.aruco.ArucoDetector(aruco_dict, parameters)
 
 
 def detect_aruco_markers(gray, detector_type, detector):
@@ -156,10 +174,7 @@ def estimate_homography(corners, ids):
 	ids_flat = ids.flatten().tolist()
 	reference = marker_reference_corners()
 
-	src_points = []
-	dst_points = []
-	detected_valid_ids = []
-
+	src_points, dst_points, detected_valid_ids = [], [], []
 	for marker_corners, marker_id in zip(corners, ids_flat):
 		if marker_id not in reference:
 			continue
@@ -167,13 +182,28 @@ def estimate_homography(corners, ids):
 		dst_points.extend(reference[marker_id])
 		detected_valid_ids.append(marker_id)
 
-	if len(detected_valid_ids) < 2:
+	if len(detected_valid_ids) < 3:
 		return None, detected_valid_ids
 
 	src_points = np.array(src_points, dtype=np.float32)
 	dst_points = np.array(dst_points, dtype=np.float32)
 
-	H, mask = cv2.findHomography(src_points, dst_points, cv2.RANSAC, 5.0)
+	method = cv2.USAC_MAGSAC if hasattr(cv2, "USAC_MAGSAC") else cv2.RANSAC
+	H, mask = cv2.findHomography(src_points, dst_points, method, 4.0)
+
+	if H is None:
+		return None, detected_valid_ids
+
+	# Rechazar homografías mal condicionadas (casi singulares)
+	if abs(np.linalg.det(H)) < 1e-6:
+		return None, detected_valid_ids
+
+	# Validar error de reproyección real, no solo confiar en el inlier mask
+	proyectados = cv2.perspectiveTransform(src_points.reshape(-1, 1, 2), H)
+	error = np.linalg.norm(proyectados.reshape(-1, 2) - dst_points, axis=1)
+	if np.mean(error) > 6.0:  # px en el espacio de referencia (48*32=1536)
+		return None, detected_valid_ids
+
 	return H, detected_valid_ids
 
 

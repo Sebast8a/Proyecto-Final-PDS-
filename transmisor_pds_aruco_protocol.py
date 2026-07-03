@@ -30,7 +30,8 @@ ARUCO_DICT_ID = cv2.aruco.DICT_5X5_100
 ARUCO_IDS = {
 	"TL": 0,
 	"TR": 1,
-	"BL": 2
+	"BL": 2,
+	"BR": 3
 }
 
 BYTES_FRAME = 255
