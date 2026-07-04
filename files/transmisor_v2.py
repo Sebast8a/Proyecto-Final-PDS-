@@ -14,7 +14,7 @@ from reedsolo import RSCodec
 # ══════════════════════════════════════════════════════════════════════
 
 TAM_CELDA = 32
-CELDAS = 48
+CELDAS = 32
 PANTALLA_W = TAM_CELDA * CELDAS
 PANTALLA_H = TAM_CELDA * CELDAS
 
@@ -34,8 +34,8 @@ ARUCO_IDS = {
 	"BR": 3
 }
 
-BYTES_FRAME = 255
-RS_REDUNDANCIA = 76
+BYTES_FRAME = 90
+RS_REDUNDANCIA = 27
 RS_DATOS = BYTES_FRAME - RS_REDUNDANCIA
 BITS_PAQUETE = BYTES_FRAME * 8
 
